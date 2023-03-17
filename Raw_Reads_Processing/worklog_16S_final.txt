@@ -1,0 +1,113 @@
+#Workflow conducted to analyze data in 2023 by Jonathan Sogin
+#first sequencing run resulted in extremely poor quality; second run more normal for V3 MiSeq kit
+#conducted using qiime version 2022.2
+#https://docs.qiime2.org/2022.2/tutorials/importing/
+
+#opening conda environment on biohpc
+export LC_ALL=en_US.utf-8
+export LANG=en_US.utf-8
+source /programs/miniconda3/bin/activate qiime2-2022.2
+
+#making manifest
+#end user will need to make their own manifest!! with the SRA downloaded from NCBI SRR23815527- SRR23815527606
+#the format is a tsv with the below line to make a header
+printf "sample-id\tforward-absolute-filepath\treverse-absolute-filepath\n" > 16S_manifest.tsv
+
+#this inputs our paired end read data
+qiime tools import \
+  --type 'SampleData[PairedEndSequencesWithQuality]' \
+  --input-path 16S_manifest.tsv \
+  --output-path demux.qza \
+  --input-format PairedEndFastqManifestPhred33V2
+
+#this is an interactive quality visualization document for our raw reads 
+qiime demux summarize \
+ --i-data demux.qza \
+ --p-n 1000000 \
+ --o-visualization demux_vis.qzv
+qiime tools export \
+ --input-path demux_vis.qzv \
+ --output-path quality_export
+#the files of interest are 'per sample-fastq-couts.csv', and the '[forward/reverse]-seven-number-summaries.csv'
+
+# this is used to trim primers from our sequences
+#forward primer 341F CCTACGGGNGGCWGCAG (17)
+#reverse primer 805R GACTACHVGGGTATCTAATCC (21)
+#reverse complement of the reverse primer GGATTAGATACCCBDGTAGTC
+#reverse complement of the forward primer CTGCWGCCNCCCGTAGG
+qiime cutadapt trim-paired \
+  --i-demultiplexed-sequences demux.qza \
+  --p-cores 10 \
+  --p-front-f CCTACGGGNGGCWGCAG \
+  --p-front-r GACTACHVGGGTATCTAATCC \
+  --p-adapter-f GGATTAGATACCCBDGTAGTC \
+  --p-adapter-r CTGCWGCCNCCCGTAGG \
+  --p-error-rate 0 \
+  --p-no-indels \
+  --p-no-match-read-wildcards \
+  --p-overlap 10 \
+  --p-discard-untrimmed \
+  --o-trimmed-sequences demux_cutadapt.qza
+
+#this is an interactive quality visualization document for our reads after the primers have been trimmed
+qiime demux summarize \
+ --i-data demux_cutadapt.qza \
+ --p-n 1000000 \
+ --o-visualization demux_cutadapt_vis.qzv
+qiime tools export \
+ --input-path demux_cutadapt_vis.qzv \
+ --output-path quality_cutadapt_export
+#the files of interest are '[forward/reverse]-seven-number-summaries.csv'
+
+#running dada2 on trimmed sequences
+qiime dada2 denoise-paired \
+ --i-demultiplexed-seqs demux_cutadapt.qza \
+ --p-trunc-len-f 265 \
+ --p-trunc-len-r 210 \
+ --p-max-ee-f 4 \
+ --p-max-ee-r 8 \
+ --p-trunc-q 4 \
+ --p-min-overlap 12 \
+ --p-pooling-method pseudo \
+ --p-chimera-method consensus \
+ --p-min-fold-parent-over-abundance 1.0 \
+ --p-n-threads 20 \
+ --p-n-reads-learn 1000000 \
+ --output-dir dada2_265_210_4_8_4 &
+
+#exporting denoising stats
+qiime tools export \
+ --input-path denoising_stats.qza \
+ --output-path denoising_export 
+#the file of interest is 'stats.tsv'
+
+#exporting OTU table
+qiime tools export \
+  --input-path table.qza \
+  --output-path OTU_output &
+#the file of interest is 'feature-table.biom'
+
+#exporting sequences
+qiime tools export \
+  --input-path representative_sequences.qza \
+  --output-path sequence_export &
+
+#feature classification for taxonomy using precomputed classifier
+qiime feature-classifier classify-sklearn \
+ --i-reads representative_sequences.qza \
+ --i-classifier ./classifier_bakt341F_bakt805R_silva_138_99_16S.qza \
+ --p-reads-per-batch 100 \
+ --p-n-jobs 20 \
+ --o-classification feature_taxonomy.qza &
+
+#exporting feature taxonomy table
+qiime tools export \
+  --input-path feature_taxonomy.qza \
+  --output-path taxonomy_export &
+#reformatting taxonomy table to append to biom table
+sed -i '1d' ./taxonomy_export/taxonomy.tsv
+sed -i '1 i\#OTUID\ttaxonomy\tconfidence' ./taxonomy_export/taxonomy.tsv
+
+#add observation and sample metadata to biom table
+#metadata should be formatted as tsv documents with headers '#[OTUID/SampleID] ...' respectively
+biom add-metadata -i ./OTU_output/feature-table.biom -o 16S.biom --observation-metadata-fp ./taxonomy_export/taxonomy.tsv --sc-separated taxonomy --float-fields confidence

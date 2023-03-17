@@ -1,0 +1,32 @@
+#Bacterial taxonomic classifier creation
+#2023
+#Jonathan Sogin
+#Qiime2 database for 16S V3-V4 sequence classification for primers bact341F and bact805R
+#forward primer: CCTACGGGNGGCWGCAG
+#reverse primer: GACTACHVGGGTATCTAATCC
+#used qiime version 2022.2
+#qiime compatible database was downloaded from QIIME2 website - this is not supported by SILVA 
+
+#opening conda environment on biohpc
+export LC_ALL=en_US.utf-8
+export LANG=en_US.utf-8
+source /programs/miniconda3/bin/activate qiime2-2022.2
+
+wget https://data.qiime2.org/2022.2/common/silva-138-99-seqs.qza
+wget https://data.qiime2.org/2022.2/common/silva-138-99-tax.qza
+
+#The files above were downloaded and processed from the SILVA 138 release data using the RESCRIPt plugin and q2-feature-classifier. Sequences were downloaded, reverse-transcribed, and filtered to remove sequences based on length, presence of ambiguous nucleotides and/or homopolymer. Taxonomy was parsed to generate even 7-level rank taxonomic labels, including species labels. Sequences and taxonomies were dereplicated using RESCRIPt. Sequences and taxonomies representing the 515F/806R region of the 16S SSU rRNA gene were extracted with q2-feature-classifier, followed by dereplication with RESCRIPt.
+#https://github.com/bokulich-lab/RESCRIPt
+
+qiime feature-classifier extract-reads \
+  --i-sequences silva-138-99-seqs.qza \
+  --p-f-primer CCTACGGGNGGCWGCAG \
+  --p-r-primer GACTACHVGGGTATCTAATCC \
+  --p-min-length 50 \
+  --p-max-length 0 \
+  --o-reads ref-seqs_bact341F_bact805R_silva_138_99_16S.qza
+
+qiime feature-classifier fit-classifier-naive-bayes \
+  --i-reference-reads ref-seqs_bact341F_bact805R_silva_138_99_16S.qza \
+  --i-reference-taxonomy silva-138-99-tax.qza \
+  --o-classifier classifier_bakt341F_bakt805R_silva_138_99_16S.qza

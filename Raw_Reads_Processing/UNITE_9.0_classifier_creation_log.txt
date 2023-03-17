@@ -1,0 +1,35 @@
+#Fungal taxonomic classifier creation
+#2023
+#Jonathan Sogin
+#Qiime2 database for ITS sequence classification
+#used qiime version 2022.2
+#qiime compatible fungi database was downloaded from UNITE website - https://unite.ut.ee/repository.php, https://doi.org/10.15156/BIO/2483916
+
+#opening conda environment on biohpc
+export LC_ALL=en_US.utf-8
+export LANG=en_US.utf-8
+source /programs/miniconda3/bin/activate qiime2-2022.2
+
+wget https://files.plutof.ut.ee/public/orig/67/1C/671C4D441E50DCD30691B84EED22065D77BAD3D18AF1905675633979BF323754.tgz
+tar -xvf *.tgz
+
+#using 'developer' sequences as suggested by Qiime2 https://docs.qiime2.org/2021.4/tutorials/feature-classifier/
+#"In our experience, fungal ITS classifiers trained on the UNITE reference database do NOT benefit from extracting/trimming reads to primer sites. We recommend training UNITE classifiers on the full reference sequences. Furthermore, we recommend the “developer” sequences (located within the QIIME-compatible release download) because the standard versions of the sequences have already been trimmed to the ITS region (excluding portions of flanking rRNA genes that may be present in amplicons generated with standard ITS primers)."
+
+#this imports the sequence data
+qiime tools import \
+  --type 'FeatureData[Sequence]' \
+  --input-path ./sh_qiime_release_s_29.11.2022/developer/sh_refs_qiime_ver9_dynamic_s_29.11.2022_dev.fasta \
+  --output-path sh_refs_qiime_ver9_dynamic_s_29.11.2022_dev.qza
+
+#this imports the taxonomy data
+qiime tools import \
+  --type 'FeatureData[Taxonomy]' \
+  --input-format HeaderlessTSVTaxonomyFormat \
+  --input-path ./sh_qiime_release_s_29.11.2022/developer/sh_taxonomy_qiime_ver9_dynamic_s_29.11.2022_dev.txt \
+  --output-path sh_taxonomy_qiime_ver9_dynamic_s_29.11.2022_dev.qza
+
+qiime feature-classifier fit-classifier-naive-bayes \
+  --i-reference-reads sh_refs_qiime_ver9_dynamic_s_29.11.2022_dev.qza \
+  --i-reference-taxonomy sh_taxonomy_qiime_ver9_dynamic_s_29.11.2022_dev.qza \
+  --o-classifier classifier_unite_dynamic_ITS.qza
